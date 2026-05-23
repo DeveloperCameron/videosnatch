@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VideoSnatch</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --surface2: #1a1a1a;
+    --border: #2a2a2a;
+    --accent: #e8ff47;
+    --accent2: #ff4757;
+    --text: #f0f0f0;
+    --muted: #666;
+    --success: #47ffb2;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grain texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.4;
+  }
+
+  .header {
+    padding: 3rem 2rem 0;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(3rem, 10vw, 6rem);
+    letter-spacing: 0.05em;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .logo span {
+    color: var(--accent);
+  }
+
+  .tagline {
+    font-size: 0.85rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-top: 0.5rem;
+  }
+
+  .supported {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+
+  .pill {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--muted);
+  }
+
+  .main {
+    max-width: 800px;
+    margin: 3rem auto;
+    padding: 0 2rem 4rem;
+  }
+
+  .url-form {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .url-form:focus-within {
+    border-color: var(--accent);
+  }
+
+  .url-input {
+    flex: 1;
+    background: var(--surface);
+    border: none;
+    outline: none;
+    padding: 1.1rem 1.2rem;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+  }
+
+  .url-input::placeholder { color: var(--muted); }
+
+  .fetch-btn {
+    background: var(--accent);
+    border: none;
+    padding: 0 1.8rem;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.08em;
+    color: #000;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .fetch-btn:hover { background: #d4eb2e; }
+  .fetch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Video info card */
+  .video-card {
+    margin-top: 2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    display: none;
+    animation: slideUp 0.3s ease;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .video-card.visible { display: block; }
+
+  .card-header {
+    display: flex;
+    gap: 1.2rem;
+    padding: 1.2rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .thumbnail {
+    width: 140px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 2px;
+    flex-shrink: 0;
+    background: var(--surface2);
+  }
+
+  .video-meta { flex: 1; min-width: 0; }
+
+  .video-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .video-sub {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.3rem;
+  }
+
+  .platform-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--accent);
+    color: #000;
+    padding: 0.15rem 0.5rem;
+    border-radius: 2px;
+    margin-top: 0.4rem;
+    font-weight: 500;
+  }
+
+  /* Format picker */
+  .formats-section {
+    padding: 1.2rem;
+  }
+
+  .section-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.8rem;
+  }
+
+  .formats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .format-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.6rem 0.8rem;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+    color: var(--text);
+  }
+
+  .format-btn:hover { border-color: var(--accent); }
+
+  .format-btn.selected {
+    border-color: var(--accent);
+    background: rgba(232, 255, 71, 0.07);
+  }
+
+  .format-res {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+
+  .format-detail {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 0.1rem;
+  }
+
+  .format-best {
+    display: inline-block;
+    font-size: 0.6rem;
+    background: var(--accent);
+    color: #000;
+    padding: 0.1rem 0.35rem;
+    border-radius: 2px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .download-row {
+    padding: 1rem 1.2rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .download-btn {
+    background: var(--accent);
+    border: none;
+    padding: 0.85rem 2rem;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.15rem;
+    letter-spacing: 0.08em;
+    color: #000;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  .download-btn:hover { background: #d4eb2e; transform: translateY(-1px); }
+  .download-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .audio-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    padding: 0.85rem 1.5rem;
+    font-family: "Bebas Neue", sans-serif;
+    font-size: 1.15rem;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 3px;
+    transition: border-color 0.15s;
+  }
+  .audio-btn:hover { border-color: var(--success); color: var(--success); }
+
+  /* Progress bar */
+  .progress-wrap {
+    display: none;
+    margin: 1.5rem 0 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.2rem;
+  }
+
+  .progress-wrap.visible { display: block; animation: slideUp 0.3s ease; }
+
+  .progress-label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 0.6rem;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .progress-bar-track {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.4s ease;
+  }
+
+  .progress-meta {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 0.5rem;
+  }
+
+  /* Done state */
+  .done-card {
+    display: none;
+    margin-top: 1.5rem;
+    background: rgba(71, 255, 178, 0.05);
+    border: 1px solid var(--success);
+    border-radius: 4px;
+    padding: 1.2rem;
+    animation: slideUp 0.3s ease;
+  }
+
+  .done-card.visible { display: flex; align-items: center; gap: 1rem; }
+
+  .done-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .done-text { flex: 1; }
+  .done-title { font-size: 0.9rem; color: var(--success); font-weight: 500; }
+  .done-sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; }
+
+  .save-btn {
+    background: var(--success);
+    color: #000;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    font-family: "Bebas Neue", sans-serif;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+    border-radius: 3px;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  /* Error */
+  .error-msg {
+    display: none;
+    margin-top: 1rem;
+    padding: 0.8rem 1rem;
+    background: rgba(255, 71, 87, 0.08);
+    border: 1px solid var(--accent2);
+    border-radius: 4px;
+    color: var(--accent2);
+    font-size: 0.85rem;
+  }
+
+  .error-msg.visible { display: block; animation: slideUp 0.3s ease; }
+
+  /* Install notice */
+  .install-notice {
+    display: none;
+    margin-top: 2rem;
+    padding: 1.2rem;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  .install-notice.visible { display: block; }
+  .install-notice h3 { color: var(--accent); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.8rem; }
+  .install-notice code { background: var(--surface2); padding: 0.15rem 0.4rem; border-radius: 2px; font-size: 0.8rem; color: var(--accent); }
+  .install-notice p { color: var(--muted); margin-top: 0.5rem; line-height: 1.6; }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 3rem 0;
+  }
+
+  .footer {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  .footer a { color: var(--muted); text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">Video<span>Snatch</span></div>
+  <div class="tagline">Download from anywhere — YouTube, Twitter, Instagram, TikTok &amp; 1000+ sites</div>
+  <div class="supported">
+    <span class="pill">YouTube</span>
+    <span class="pill">Twitter / X</span>
+    <span class="pill">Instagram</span>
+    <span class="pill">TikTok</span>
+    <span class="pill">Vimeo</span>
+    <span class="pill">Reddit</span>
+    <span class="pill">Twitch</span>
+    <span class="pill">Facebook</span>
+    <span class="pill">+ 1000 more</span>
+  </div>
+</header>
+
+<main class="main">
+
+  <div class="url-form">
+    <input
+      class="url-input"
+      id="urlInput"
+      type="url"
+      placeholder="Paste any video URL here…"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <button class="fetch-btn" id="fetchBtn" onclick="fetchInfo()">Fetch</button>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+
+  <div class="video-card" id="videoCard">
+    <div class="card-header">
+      <img class="thumbnail" id="thumbnail" src="" alt="">
+      <div class="video-meta">
+        <div class="video-title" id="videoTitle">—</div>
+        <div class="video-sub" id="videoSub">—</div>
+        <div class="platform-badge" id="platformBadge"></div>
+      </div>
+    </div>
+    <div class="formats-section">
+      <div class="section-label">Choose Quality</div>
+      <div class="formats-grid" id="formatsGrid"></div>
+    </div>
+    <div class="download-row">
+      <button class="download-btn" id="downloadBtn" onclick="startDownload()">⬇ Download Video</button>
+      <button class="audio-btn" onclick="startDownload(true)">♪ Audio Only</button>
+    </div>
+  </div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-label">
+      <span id="progressStatus">Downloading…</span>
+      <span id="progressPct">0%</span>
+    </div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-meta" id="progressMeta"></div>
+  </div>
+
+  <div class="done-card" id="doneCard">
+    <div class="done-icon">✓</div>
+    <div class="done-text">
+      <div class="done-title">Download ready</div>
+      <div class="done-sub" id="doneFilename"></div>
+    </div>
+    <a class="save-btn" id="saveBtn" href="#" download>Save File</a>
+  </div>
+
+  <div class="install-notice" id="installNotice">
+    <h3>⚙ Setup Required</h3>
+    <p>VideoSnatch uses <strong>yt-dlp</strong> under the hood. Install it first:</p>
+    <p>macOS: <code>brew install yt-dlp</code></p>
+    <p>Windows: <code>winget install yt-dlp</code> or download from <a href="https://github.com/yt-dlp/yt-dlp/releases" target="_blank">GitHub releases</a></p>
+    <p>Linux / pip: <code>pip install yt-dlp</code></p>
+    <p>You'll also need <strong>ffmpeg</strong> for merging audio+video: <code>brew install ffmpeg</code> / <code>winget install ffmpeg</code></p>
+  </div>
+
+  <hr class="divider">
+  <div class="footer">
+    Powered by <a href="https://github.com/yt-dlp/yt-dlp" target="_blank">yt-dlp</a> · Downloads are saved temporarily then auto-deleted after 1 hour.<br>
+    Only download content you have the right to download.
+  </div>
+</main>
+
+<script>
+let selectedFormatId = null;
+let currentVideoInfo = null;
+
+function formatDuration(secs) {
+  if (!secs) return '';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    : `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+  if (bytes > 1e6) return (bytes / 1e6).toFixed(1) + ' MB';
+  return (bytes / 1e3).toFixed(0) + ' KB';
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function clearError() {
+  document.getElementById('errorMsg').classList.remove('visible');
+}
+
+function showInstallNotice() {
+  document.getElementById('installNotice').classList.add('visible');
+}
+
+async function fetchInfo() {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) return;
+
+  clearError();
+  document.getElementById('videoCard').classList.remove('visible');
+  document.getElementById('progressWrap').classList.remove('visible');
+  document.getElementById('doneCard').classList.remove('visible');
+  document.getElementById('installNotice').classList.remove('visible');
+  selectedFormatId = null;
+
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Fetching';
+
+  try {
+    const res = await fetch(`/api/info?url=${encodeURIComponent(url)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (data.install) showInstallNotice();
+      showError(data.error || 'Failed to fetch video info');
+      return;
+    }
+
+    currentVideoInfo = data;
+    renderVideoCard(data);
+  } catch (e) {
+    showError('Could not reach the server. Is it running?');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Fetch';
+  }
+}
+
+function renderVideoCard(info) {
+  document.getElementById('thumbnail').src = info.thumbnail || '';
+  document.getElementById('videoTitle').textContent = info.title || 'Unknown title';
+  document.getElementById('videoSub').textContent =
+    [info.uploader, formatDuration(info.duration)].filter(Boolean).join(' · ');
+  document.getElementById('platformBadge').textContent = info.platform || '';
+
+  const grid = document.getElementById('formatsGrid');
+  grid.innerHTML = '';
+
+  // Add "Best" option first
+  const bestBtn = document.createElement('button');
+  bestBtn.className = 'format-btn selected';
+  bestBtn.dataset.fid = '';
+  bestBtn.innerHTML = `
+    <div class="format-res">Best</div>
+    <div class="format-detail"><span class="format-best">Recommended</span></div>
+  `;
+  bestBtn.onclick = () => selectFormat('', bestBtn);
+  grid.appendChild(bestBtn);
+
+  for (const f of info.formats) {
+    const btn = document.createElement('button');
+    btn.className = 'format-btn';
+    btn.dataset.fid = f.format_id;
+    btn.innerHTML = `
+      <div class="format-res">${f.resolution || f.ext}</div>
+      <div class="format-detail">${f.ext}${f.fps ? ' · ' + f.fps + 'fps' : ''}${f.filesize ? '<br>' + formatSize(f.filesize) : ''}</div>
+    `;
+    btn.onclick = () => selectFormat(f.format_id, btn);
+    grid.appendChild(btn);
+  }
+
+  document.getElementById('videoCard').classList.add('visible');
+}
+
+function selectFormat(fid, btn) {
+  selectedFormatId = fid;
+  document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+function startDownload(audioOnly = false) {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) return;
+
+  clearError();
+  document.getElementById('doneCard').classList.remove('visible');
+  document.getElementById('progressWrap').classList.add('visible');
+  document.getElementById('downloadBtn').disabled = true;
+
+  const fill = document.getElementById('progressFill');
+  const pct = document.getElementById('progressPct');
+  const status = document.getElementById('progressStatus');
+  const meta = document.getElementById('progressMeta');
+
+  fill.style.width = '0%';
+  pct.textContent = '0%';
+  status.textContent = audioOnly ? 'Extracting audio…' : 'Downloading…';
+  meta.textContent = '';
+
+  let formatParam = selectedFormatId ? `&format_id=${selectedFormatId}` : '';
+  if (audioOnly) formatParam = '&format_id=bestaudio';
+
+  const evtSource = new EventSource(`/api/download?url=${encodeURIComponent(url)}${formatParam}`);
+
+  evtSource.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'progress') {
+      const p = Math.min(msg.percent, 99);
+      fill.style.width = p + '%';
+      pct.textContent = p.toFixed(1) + '%';
+      meta.textContent = `${msg.size} — ${msg.speed}`;
+    } else if (msg.type === 'done') {
+      fill.style.width = '100%';
+      pct.textContent = '100%';
+      status.textContent = 'Complete!';
+      meta.textContent = '';
+
+      const doneCard = document.getElementById('doneCard');
+      document.getElementById('doneFilename').textContent = msg.filename;
+      document.getElementById('saveBtn').href = msg.downloadUrl;
+      document.getElementById('saveBtn').download = msg.filename;
+      doneCard.classList.add('visible');
+      document.getElementById('downloadBtn').disabled = false;
+      evtSource.close();
+    } else if (msg.type === 'error') {
+      showError(msg.message);
+      document.getElementById('progressWrap').classList.remove('visible');
+      document.getElementById('downloadBtn').disabled = false;
+      evtSource.close();
+    }
+  };
+
+  evtSource.onerror = () => {
+    showError('Connection lost. Is the server still running?');
+    document.getElementById('progressWrap').classList.remove('visible');
+    document.getElementById('downloadBtn').disabled = false;
+    evtSource.close();
+  };
+}
+
+// Allow pressing Enter to fetch
+document.getElementById('urlInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') fetchInfo();
+});
+</script>
+</body>
+</html>
