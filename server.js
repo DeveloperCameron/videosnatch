@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { exec, spawn } = require("child_process");
+const { exec, execSync, spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
@@ -14,36 +14,41 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/downloads", express.static(DOWNLOADS_DIR));
 
-// Ensure downloads dir exists
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR);
 
-// Find yt-dlp wherever it's installed (Mac Homebrew or system PATH)
+// Find a binary using `which`, with hardcoded fallbacks
 function findBin(name) {
+  try {
+    const result = execSync(`which ${name} 2>/dev/null`).toString().trim();
+    if (result) return result;
+  } catch {}
   const candidates = [
     `/opt/homebrew/bin/${name}`,
     `/usr/local/bin/${name}`,
     `/usr/bin/${name}`,
-    name, // fallback to PATH
+    `/nix/var/nix/profiles/default/bin/${name}`,
   ];
   for (const c of candidates) {
-    try {
-      if (c === name || fs.existsSync(c)) return c;
-    } catch {}
+    try { if (fs.existsSync(c)) return c; } catch {}
   }
   return name;
 }
 
 const YTDLP = findBin("yt-dlp");
-const FFMPEG_DIR = path.dirname(findBin("ffmpeg"));
+const FFMPEG_BIN = findBin("ffmpeg");
+const FFMPEG_DIR = (FFMPEG_BIN && FFMPEG_BIN !== "ffmpeg") ? path.dirname(FFMPEG_BIN) : "";
 
-// Check if yt-dlp is installed
+console.log(`\n🎬 VideoSnatch starting...`);
+console.log(`   yt-dlp:  ${YTDLP}`);
+console.log(`   ffmpeg:  ${FFMPEG_BIN}`);
+console.log(`   ffmpeg dir: ${FFMPEG_DIR}\n`);
+
 function checkYtDlp() {
   return new Promise((resolve) => {
     exec(`"${YTDLP}" --version`, (err) => resolve(!err));
   });
 }
 
-// GET /api/info — fetch video metadata
 app.get("/api/info", async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: "No URL provided" });
@@ -60,9 +65,7 @@ app.get("/api/info", async (req, res) => {
     `"${YTDLP}" --dump-json --no-playlist "${url.replace(/"/g, '\\"')}"`,
     { maxBuffer: 1024 * 1024 * 10 },
     (err, stdout, stderr) => {
-      if (err) {
-        return res.status(400).json({ error: stderr || err.message });
-      }
+      if (err) return res.status(400).json({ error: stderr || err.message });
       try {
         const info = JSON.parse(stdout);
         const formats = (info.formats || [])
@@ -77,15 +80,10 @@ app.get("/api/info", async (req, res) => {
             acodec: f.acodec,
             note: f.format_note,
           }))
-          .filter(
-            (f, i, arr) =>
-              arr.findIndex((x) => x.resolution === f.resolution && x.ext === f.ext) === i
+          .filter((f, i, arr) =>
+            arr.findIndex((x) => x.resolution === f.resolution && x.ext === f.ext) === i
           )
-          .sort((a, b) => {
-            const ah = parseInt(a.resolution) || 0;
-            const bh = parseInt(b.resolution) || 0;
-            return bh - ah;
-          });
+          .sort((a, b) => (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0));
 
         res.json({
           title: info.title,
@@ -102,15 +100,12 @@ app.get("/api/info", async (req, res) => {
   );
 });
 
-// GET /api/download — stream download progress via SSE
 app.get("/api/download", async (req, res) => {
   const { url, format_id } = req.query;
   if (!url) return res.status(400).json({ error: "No URL provided" });
 
   const installed = await checkYtDlp();
-  if (!installed) {
-    return res.status(500).json({ error: "yt-dlp not installed" });
-  }
+  if (!installed) return res.status(500).json({ error: "yt-dlp not installed" });
 
   const jobId = uuidv4();
   const outputTemplate = path.join(DOWNLOADS_DIR, `${jobId}.%(ext)s`);
@@ -121,23 +116,17 @@ app.get("/api/download", async (req, res) => {
 
   const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
-  const args = [
-    "--no-playlist",
-    "--newline",
-    "-o", outputTemplate,
-    "--ffmpeg-location", FFMPEG_DIR,
-  ];
+  const args = ["--no-playlist", "--newline", "-o", outputTemplate];
 
-  if (format_id && format_id !== "bestaudio") {
+  if (FFMPEG_DIR) args.push("--ffmpeg-location", FFMPEG_DIR);
+
+  if (format_id === "bestaudio") {
+    args.push("-f", "bestaudio", "-x", "--audio-format", "mp3");
+  } else if (format_id) {
     args.push("-f", `${format_id}+bestaudio/best`);
-  } else if (format_id === "bestaudio") {
-    args.push("-f", "bestaudio");
-    args.push("-x", "--audio-format", "mp3");
+    args.push("--merge-output-format", "mp4");
   } else {
     args.push("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best");
-  }
-
-  if (format_id !== "bestaudio") {
     args.push("--merge-output-format", "mp4");
   }
 
@@ -151,12 +140,7 @@ app.get("/api/download", async (req, res) => {
     for (const line of lines) {
       const progressMatch = line.match(/(\d+\.?\d*)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+\/s)/);
       if (progressMatch) {
-        send({
-          type: "progress",
-          percent: parseFloat(progressMatch[1]),
-          size: progressMatch[2],
-          speed: progressMatch[3],
-        });
+        send({ type: "progress", percent: parseFloat(progressMatch[1]), size: progressMatch[2], speed: progressMatch[3] });
       }
       const destMatch = line.match(/\[(?:download|Merger)\]\s+(?:Destination|Merging):\s+(.+)/);
       if (destMatch) filename = destMatch[1].trim();
@@ -165,9 +149,7 @@ app.get("/api/download", async (req, res) => {
     }
   });
 
-  proc.stderr.on("data", (data) => {
-    send({ type: "log", message: data.toString() });
-  });
+  proc.stderr.on("data", (data) => send({ type: "log", message: data.toString() }));
 
   proc.on("close", (code) => {
     if (code === 0) {
@@ -177,8 +159,7 @@ app.get("/api/download", async (req, res) => {
         if (files.length > 0) finalFile = path.join(DOWNLOADS_DIR, files[0]);
       }
       if (finalFile && fs.existsSync(finalFile)) {
-        const basename = path.basename(finalFile);
-        send({ type: "done", downloadUrl: `/downloads/${basename}`, filename: basename });
+        send({ type: "done", downloadUrl: `/downloads/${path.basename(finalFile)}`, filename: path.basename(finalFile) });
       } else {
         send({ type: "error", message: "Download completed but file not found" });
       }
@@ -191,20 +172,14 @@ app.get("/api/download", async (req, res) => {
   req.on("close", () => proc.kill());
 });
 
-// Clean up old downloads (older than 1hr)
 setInterval(() => {
   const now = Date.now();
   try {
     fs.readdirSync(DOWNLOADS_DIR).forEach((file) => {
       const fp = path.join(DOWNLOADS_DIR, file);
-      const stat = fs.statSync(fp);
-      if (now - stat.mtimeMs > 3600000) fs.unlinkSync(fp);
+      if (now - fs.statSync(fp).mtimeMs > 3600000) fs.unlinkSync(fp);
     });
   } catch {}
 }, 600000);
 
-app.listen(PORT, () => {
-  console.log(`\n🎬 VideoSnatch running at http://localhost:${PORT}\n`);
-  console.log(`   yt-dlp: ${YTDLP}`);
-  console.log(`   ffmpeg: ${FFMPEG_DIR}\n`);
-});
+app.listen(PORT, () => console.log(`🎬 VideoSnatch running at http://localhost:${PORT}`));
