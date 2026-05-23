@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "pip install yt-dlp && apt-get install -y ffmpeg || true",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
